@@ -1,6 +1,6 @@
-# Repositorio estudioAutoencodersNetflix
+# Repositorio estudioAutoencodersNetflix 
 
-Este es un estudio del modelo Autoencoders, usando una base de datos mysql, para simular sugerencias de películas a usuarios. Corresponde a la semana 2 del módulo TAP005-11210-224081-ONL-CERTIFICADO DE ESPECIALIDAD V, año 2024. Profesor Juan Contreras.
+Este es un estudio del modelo Autoencoders, usando una base de datos mysql, para simular sugerencias de películas a usuarios. Corresponde a la semana 2 del módulo TAP005-11210-224081-ONL-CERTIFICADO DE ESPECIALIDAD V, año 2024. Profesor Juan Contreras. ## Actualizado, para la semana 3
 
 Para lograr este estudio, he creado una base de datos mysql con 3 tablas, cuyo script se encuentra integrado. Ya pose data de usuarios, películas y las visualizaciones.
 
@@ -114,4 +114,8 @@ mysql -u root -p netflix < caso_netflix.sql
 ### Ejecutar el script principal:
 ```
 python netflix_ml.py
+```
+### Ejecutar el script para la semana 3:   (se añade visualizacion entre capas)
+```
+python netflix_mlv.py
 ```
