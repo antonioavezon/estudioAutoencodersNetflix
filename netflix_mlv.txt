@@ -1,10 +1,11 @@
-import pymysql
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
-from tensorflow.keras.models import Sequential # type: ignore
-from tensorflow.keras.layers import Dense # type: ignore
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras import Input
+import matplotlib.pyplot as plt
+from sqlalchemy import create_engine
 import os
 import random
 
@@ -13,12 +14,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # Configuración de conexión a MySQL
 def conectar_db():
-    return pymysql.connect(
-        host="localhost",
-        user="root",
-        password="qwerty",
-        database="netflix"
-    )
+    engine = create_engine("mysql+pymysql://root:qwerty@localhost/netflix")
+    return engine
 
 # Cargar datos de visualizaciones
 def cargar_datos_visualizaciones(connection):
@@ -39,14 +36,15 @@ def crear_matriz_usuario_pelicula(df):
 
 # Normalizar los datos
 def normalizar_datos(matriz):
-    mean_user_rating = matriz.mean(axis=1).reshape(-1, 1)
+    mean_user_rating = matriz.mean(axis=1).reshape(-1, 1)  # Ajustado para usar directamente numpy.ndarray
     normalized = matriz - mean_user_rating
     return normalized, mean_user_rating
 
 # Entrenar modelo
-def entrenar_modelo(train, input_dim):
+def entrenar_modelo(train, test, input_dim):
     model = Sequential([
-        Dense(256, activation='relu', input_shape=(input_dim,)),
+        Input(shape=(input_dim,)),
+        Dense(256, activation='relu'),
         Dense(128, activation='relu'),
         Dense(64, activation='relu'),
         Dense(128, activation='relu'),
@@ -54,8 +52,41 @@ def entrenar_modelo(train, input_dim):
         Dense(input_dim, activation='sigmoid')
     ])
     model.compile(optimizer='adam', loss='mean_squared_error')
-    model.fit(train, train, epochs=10, batch_size=32, validation_split=0.1, verbose=1)
-    return model
+    history = model.fit(train, train, epochs=10, batch_size=32, validation_data=(test, test), verbose=1)
+    return model, history
+
+# Visualización 1: Progreso del entrenamiento
+def visualizar_entrenamiento(history):
+    plt.plot(history.history['loss'], label='Loss (Entrenamiento)')
+    plt.plot(history.history['val_loss'], label='Loss (Validación)')
+    plt.xlabel('Epochs')
+    plt.ylabel('Error')
+    plt.title('Progreso del Entrenamiento')
+    plt.legend()
+    plt.show()
+
+# Visualización 2: Comparación entre predicciones y datos reales
+def visualizar_comparacion_usuario(usuario_id, ratings_matrix, predicted_ratings):
+    usuario_idx = ratings_matrix.index.get_loc(usuario_id)
+    datos_reales = ratings_matrix.iloc[usuario_idx]
+    datos_predichos = predicted_ratings[usuario_idx]
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(datos_reales, 'o-', label='Datos Reales')
+    plt.plot(datos_predichos, 'x-', label='Predicciones')
+    plt.xlabel('Películas')
+    plt.ylabel('Calificación')
+    plt.title(f'Comparación Usuario {usuario_id}')
+    plt.legend()
+    plt.show()
+
+# Visualización 3: Distribución de las calificaciones predichas
+def visualizar_distribucion(predicted_ratings):
+    plt.hist(predicted_ratings.flatten(), bins=50, color='skyblue', edgecolor='black')
+    plt.xlabel('Calificaciones Predichas')
+    plt.ylabel('Frecuencia')
+    plt.title('Distribución de Calificaciones Predichas')
+    plt.show()
 
 # Obtener recomendaciones para un usuario
 def obtener_recomendaciones(usuario_id, ratings_matrix, predicted_ratings, connection, top_n=5):
@@ -66,9 +97,8 @@ def obtener_recomendaciones(usuario_id, ratings_matrix, predicted_ratings, conne
     recomendaciones = []
     for pelicula_idx in peliculas_recomendadas_idx:
         query = f"SELECT titulo, genero FROM peliculas WHERE id = {pelicula_idx + 1};"
-        with connection.cursor() as cursor:
-            cursor.execute(query)
-            result = cursor.fetchone()
+        with connection.connect() as conn:  
+            result = conn.execute(query).fetchone()  # Ejecutar la consulta y obtener un resultado
             if result:
                 recomendaciones.append({"titulo": result[0], "genero": result[1]})
     return recomendaciones
@@ -91,7 +121,7 @@ def main():
     connection = conectar_db()
     df = cargar_datos_visualizaciones(connection)
     ratings_matrix = crear_matriz_usuario_pelicula(df)
-    
+
     # Normalización de datos
     normalized_ratings, mean_user_rating = normalizar_datos(ratings_matrix.values)
 
@@ -101,22 +131,24 @@ def main():
     # Entrenamiento del modelo
     print("\n=== Entrenamiento del Modelo ===")
     input_dim = ratings_matrix.shape[1]
-    model = entrenar_modelo(train, input_dim)
+    model, history = entrenar_modelo(train, test, input_dim)
+
+    # Visualización del progreso del entrenamiento
+    visualizar_entrenamiento(history)
 
     # Predicciones
     predicted_ratings = model.predict(normalized_ratings) + mean_user_rating
 
-    # Sorteo de usuarios
+    # Visualización de la distribución de calificaciones predichas
+    visualizar_distribucion(predicted_ratings)
+
+    # Sorteo de usuarios para comparación
     usuarios_aleatorios = random.sample(ratings_matrix.index.tolist(), 10)
 
-    # Mostrar historial de visualización
-    print("\n=== Datos Preliminares: Vistas y Valoraciones de los Usuarios Seleccionados ===")
+    # Mostrar historial y comparación para cada usuario
     for usuario_id in usuarios_aleatorios:
         mostrar_historial_usuario(usuario_id, df)
-
-    # Mostrar recomendaciones
-    print("\n=== Recomendaciones para los Usuarios Seleccionados ===")
-    for usuario_id in usuarios_aleatorios:
+        visualizar_comparacion_usuario(usuario_id, ratings_matrix, predicted_ratings)
         usuario_nombre = df[df['usuario_id'] == usuario_id]['usuario_nombre'].iloc[0]
         recomendaciones = obtener_recomendaciones(usuario_id, ratings_matrix, predicted_ratings, connection)
         mostrar_recomendaciones(usuario_nombre, recomendaciones)
